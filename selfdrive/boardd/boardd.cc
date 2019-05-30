@@ -100,7 +100,7 @@ void *safety_setter_thread(void *s) {
     safety_setting = SAFETY_NOOUTPUT;
     break;
   case (int)cereal::CarParams::SafetyModels::HONDA:
-    safety_setting = SAFETY_HONDA;
+    safety_setting = SAFETY_ALLOUTPUT;
     break;
   case (int)cereal::CarParams::SafetyModels::TOYOTA:
     safety_setting = SAFETY_TOYOTA;
