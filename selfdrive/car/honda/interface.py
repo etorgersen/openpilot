@@ -652,7 +652,10 @@ class CarInterface(object):
   # to be called @ 100hz
   def apply(self, c):
     if c.hudControl.speedVisible:
-      hud_v_cruise = c.hudControl.setSpeed * CV.MS_TO_KPH
+      if common.glob.lkOnlyMode:
+        hud_v_cruise = 0
+      else:
+        hud_v_cruise = c.hudControl.setSpeed * CV.MS_TO_KPH
     else:
       hud_v_cruise = 255
 

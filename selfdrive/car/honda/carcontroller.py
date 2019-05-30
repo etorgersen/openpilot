@@ -128,8 +128,8 @@ class CarController(object):
     else:
       hud_lanes = 0
 
-    if enabled:
-      if hud_show_car and not common.glob.lkOnlyMode:
+    if enabled and not common.glob.lkOnlyMode:
+      if hud_show_car:
         hud_car = 2
       else:
         hud_car = 1
