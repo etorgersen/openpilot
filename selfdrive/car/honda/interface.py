@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import numpy as np
+import common.glob
 from cereal import car
 from common.numpy_fast import clip, interp
 from common.realtime import sec_since_boot
@@ -583,17 +584,22 @@ class CarInterface(object):
     if self.CP.enableCruise and ret.vEgo < self.CP.minEnableSpeed:
       events.append(create_event('speedTooLow', [ET.NO_ENTRY]))
 
-    # disable on pedals rising edge or when brake is pressed and speed isn't zero
+    # on pedals rising edge or when brake is pressed and speed isn't zero,
+    # if lkMode is true, switch to lkOnlyMode.  If lkMode is false, disable
     if (ret.gasPressed and not self.gas_pressed_prev) or \
        (ret.brakePressed and (not self.brake_pressed_prev or ret.vEgo > 0.001)):
-      events.append(create_event('pedalPressed', [ET.NO_ENTRY, ET.USER_DISABLE]))
+      if not common.glob.lkOnlyMode and self.CS.lkMode and ret.cruiseState.enabled:
+        common.glob.lkOnlyMode = True
+      elif not self.CS.lkMode:
+        events.append(create_event('pedalPressed', [ET.NO_ENTRY, ET.USER_DISABLE]))
+        common.glob.lkOnlyMode = False
 
     if ret.gasPressed:
       events.append(create_event('pedalPressed', [ET.PRE_ENABLE]))
 
     # it can happen that car cruise disables while comma system is enabled: need to
     # keep braking if needed or if the speed is very low
-    if self.CP.enableCruise and not ret.cruiseState.enabled and c.actuators.brake <= 0.:
+    if self.CP.enableCruise and not ret.cruiseState.enabled and not common.glob.lkOnlyMode and c.actuators.brake <= 0.:
       # non loud alert if cruise disbales below 25mph as expected (+ a little margin)
       if ret.vEgo < self.CP.minEnableSpeed + 2.:
       #  events.append(create_event('speedTooLow', [ET.IMMEDIATE_DISABLE]))
@@ -616,6 +622,7 @@ class CarInterface(object):
       # do disable on button down
       if b.type == "cancel" and b.pressed:
         events.append(create_event('buttonCancel', [ET.USER_DISABLE]))
+        common.glob.lkOnlyMode = False
 
     if self.CP.enableCruise:
       # KEEP THIS EVENT LAST! send enable event if button is pressed and there are

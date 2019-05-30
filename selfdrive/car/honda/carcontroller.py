@@ -1,3 +1,4 @@
+import common.glob
 from cereal import car #Clarity
 from collections import namedtuple
 from common.realtime import sec_since_boot
@@ -128,7 +129,7 @@ class CarController(object):
       hud_lanes = 0
 
     if enabled:
-      if hud_show_car:
+      if hud_show_car and not common.glob.lkOnlyMode:
         hud_car = 2
       else:
         hud_car = 1
@@ -163,8 +164,12 @@ class CarController(object):
       STEER_MAX = 0x1000
 
     # steer torque is converted back to CAN reference (positive when steering right)
-    apply_gas = clip(actuators.gas, 0., 1.)
-    apply_brake = int(clip(self.brake_last * BRAKE_MAX, 0, BRAKE_MAX - 1))
+    if common.glob.lkOnlyMode:
+      apply_gas = 0
+      apply_brake = 0
+    else:
+      apply_gas = clip(actuators.gas, 0., 1.)
+      apply_brake = int(clip(self.brake_last * BRAKE_MAX, 0, BRAKE_MAX - 1))
     apply_steer = int(clip(-actuators.steer * STEER_MAX, -STEER_MAX, STEER_MAX))
 
     lkas_active = enabled and not CS.steer_not_allowed and CS.lkMode and not CS.left_blinker_on and not CS.right_blinker_on  # add LKAS button to toggle steering

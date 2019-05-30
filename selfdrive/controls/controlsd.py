@@ -2,6 +2,7 @@
 import gc
 import zmq
 import json
+import common.glob
 from collections import defaultdict
 
 from cereal import car, log
@@ -32,6 +33,7 @@ from selfdrive.locationd.calibration_helpers import Calibration, Filter
 ThermalStatus = log.ThermalData.ThermalStatus
 State = log.Live100Data.ControlState
 
+common.glob.init()
 
 def isActive(state):
   """Check if the actuators are enabled"""
@@ -305,7 +307,10 @@ def data_send(plan, path_plan, CS, CI, CP, VM, state, events, actuators, v_cruis
 
     # Some override values for Honda
     brake_discount = (1.0 - clip(actuators.brake * 3., 0.0, 1.0))  # brake discount removes a sharp nonlinearity
-    CC.cruiseControl.speedOverride = float(max(0.0, (LoC.v_pid + CS.cruiseState.speedOffset) * brake_discount) if CP.enableCruise else 0.0)
+    if common.glob.lkOnlyMode:
+      CC.cruiseControl.speedOverride = float(0.0)
+    else:
+      CC.cruiseControl.speedOverride = float(max(0.0, (LoC.v_pid + CS.cruiseState.speedOffset) * brake_discount) if CP.enableCruise else 0.0)
     CC.cruiseControl.accelOverride = CI.calc_accel_override(CS.aEgo, plan.aTarget, CS.vEgo, plan.vTarget)
 
     CC.hudControl.setSpeed = float(v_cruise_kph * CV.KPH_TO_MS)
@@ -525,9 +530,12 @@ def controlsd_thread(gctx=None, rate=100):
     if plan.plan.radarCommIssue:
       events.append(create_event('radarCommIssue', [ET.NO_ENTRY, ET.SOFT_DISABLE]))
 
-    # Only allow engagement with brake pressed when stopped behind another stopped car
+    # Only allow cruise engagement with brake pressed when stopped behind another stopped car.  If LKAS enabled and stopped by not behind another stopped car, engage in LKAS only mode
     if CS.brakePressed and plan.plan.vTargetFuture >= STARTING_TARGET_SPEED and not CP.radarOffCan and CS.vEgo < 0.3:
-      events.append(create_event('noTarget', [ET.NO_ENTRY, ET.IMMEDIATE_DISABLE]))
+      if CS.lkMode and not common.glob.lkOnlyMode:
+        common.glob.lkOnlyMode = True
+      elif not CS.lkMode:
+        events.append(create_event('noTarget', [ET.NO_ENTRY, ET.IMMEDIATE_DISABLE]))
 
     if not passive:
       # update control state
