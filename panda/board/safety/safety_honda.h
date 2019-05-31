@@ -103,13 +103,14 @@ static int honda_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
   }
 
   // STEER: safety check
-  if ((to_send->RIR>>21) == 0xE4 || (to_send->RIR>>21) == 0x194) {
+/*  if ((to_send->RIR>>21) == 0xE4 || (to_send->RIR>>21) == 0x194) {
     if (current_controls_allowed) {
       // all messages are fine here
     } else {
       if ((to_send->RDLR & 0xFFFF0000) != to_send->RDLR) return 0;
     }
   }
+*/
 
   // GAS: safety check
   if ((to_send->RIR>>21) == 0x200) {
