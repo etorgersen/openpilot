@@ -554,6 +554,9 @@ class CarInterface(object):
 #    else:
 #      self.cam_can_invalid_count = 0
 
+    if common.glob.lkOnlyMode:
+      events.append(create_event('lkasOnlyMode', [ET.WARNING]))
+
     if not self.CS.lkMode:
       events.append(create_event('manualSteeringRequired', [ET.WARNING]))
     elif self.CS.lkMode and (self.CS.left_blinker_on or self.CS.right_blinker_on):

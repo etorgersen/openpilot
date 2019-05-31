@@ -116,6 +116,13 @@ ALERTS = [
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .0, .1, .1, alert_rate=0.75),
 
   Alert(
+      "lkasOnlyMode",
+      "LKAS Only Mode",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, .0, .1, .1, alert_rate=0.75),
+
+  Alert(
       "preDriverDistracted",
       "KEEP EYES ON ROAD: User Appears Distracted",
       "",
