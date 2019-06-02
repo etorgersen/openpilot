@@ -111,7 +111,7 @@ def data_sample(rcv_times, CI, CC, plan_sock, path_plan_sock, thermal, calibrati
 
   if hh is not None:
     controls_allowed = hh.health.controlsAllowed
-    if not controls_allowed and enabled:
+    if not controls_allowed and enabled and not common.glob.lkOnlyMode:
       mismatch_counter += 1
     if mismatch_counter >= 2:
       events.append(create_event('controlsMismatch', [ET.IMMEDIATE_DISABLE]))
