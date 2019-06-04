@@ -86,7 +86,8 @@ def is_on_hotspot():
 
     is_android = result.startswith('192.168.43.')
     is_ios = result.startswith('172.20.10.')
-    return (is_android or is_ios)
+    is_b4 = result.startswith('192.168.7.')
+    return (is_android or is_ios or is_b4)
   except:
     return False
 
