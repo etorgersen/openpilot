@@ -108,6 +108,8 @@ def data_sample(rcv_times, CI, CC, plan_sock, path_plan_sock, thermal, calibrati
   # Therefore we allow a mismatch for two samples, then we trigger the disengagement.
   if not enabled:
     mismatch_counter = 0
+    if common.glob.lkOnlyMode:
+      common.glob.lkOnlyMode = False
 
   if hh is not None:
     controls_allowed = hh.health.controlsAllowed
