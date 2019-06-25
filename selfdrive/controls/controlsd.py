@@ -82,6 +82,8 @@ def data_sample(rcv_times, CI, CC, plan_sock, path_plan_sock, thermal, calibrati
     overtemp = td.thermal.thermalStatus >= ThermalStatus.red
     free_space = td.thermal.freeSpace < 0.07  # under 7% of space free no enable allowed
     low_battery = td.thermal.batteryPercent < 1 and td.thermal.chargingError  # at zero percent battery, while discharging, OP should not be allowed
+    if td.thermal.thermalStatus == ThermalStatus.yellow:
+      events.append(create_event('warm', [ET.WARNING]))
 
   # Create events for battery, temperature and disk space
   if low_battery:

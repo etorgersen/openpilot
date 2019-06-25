@@ -62,7 +62,7 @@ void toggleTether() {
 }
 
 void toggleLog() {
-//  ds.logOn = 1-ds.logOn;
+  ds.logOn = 1-ds.logOn;
 }
 
 void toggleButtons() {

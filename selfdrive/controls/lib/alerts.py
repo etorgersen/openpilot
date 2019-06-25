@@ -123,6 +123,13 @@ ALERTS = [
       Priority.LOW_LOWEST, VisualAlert.none, AudibleAlert.none, .0, .1, .1, alert_rate=0.75),
 
   Alert(
+      "warm",
+      "System nearing temperature limit",
+      "",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.MID, VisualAlert.none, AudibleAlert.none, 1., .0, 1.),
+
+  Alert(
       "preDriverDistracted",
       "KEEP EYES ON ROAD: User Appears Distracted",
       "",

@@ -77,6 +77,7 @@ struct CarEvent @0x9b1657f34caf3ad3 {
     vehicleModelInvalid @52;
     controlsFailed @53;
     lkasOnlyMode @54;
+    warm @55;
   }
 }
 
