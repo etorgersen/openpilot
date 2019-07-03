@@ -86,7 +86,6 @@ class CarController(object):
     #Clarity
     #self.apply_brake_last = 0
     #self.last_pump_ts = 0
-    self.enable_camera = enable_camera
     self.packer = CANPacker(dbc_name)
     self.new_radar_config = False
     self.prev_lead_distance = 0.0
