@@ -19,10 +19,11 @@ struct CarEvent @0x9b1657f34caf3ad3 {
   immediateDisable @6 :Bool;
   preEnable @7 :Bool;
   permanent @8 :Bool;
+  resetVCruise @9 :Bool;
 
   enum EventName @0xbaa8c5d505f727de {
     # TODO: copy from error list
-    commIssue @0;
+    canError @0;
     steerUnavailable @1;
     brakeUnavailable @2;
     gasUnavailable @3;
@@ -37,7 +38,7 @@ struct CarEvent @0x9b1657f34caf3ad3 {
     buttonEnable @12;
     pedalPressed @13;
     cruiseDisabled @14;
-    radarCommIssue @15;
+    radarCanError @15;
     dataNeeded @16;
     speedTooLow @17;
     outOfSpace @18;
@@ -49,7 +50,7 @@ struct CarEvent @0x9b1657f34caf3ad3 {
     pcmDisable @24;
     noTarget @25;
     radarFault @26;
-    modelCommIssue @27;
+    modelCommIssueDEPRECATED @27;
     brakeHold @28;
     parkBrake @29;
     manualRestart @30;
@@ -72,12 +73,24 @@ struct CarEvent @0x9b1657f34caf3ad3 {
     calibrationProgress @47;
     lowBattery @48;
     invalidGiraffeHonda @49;
-    manualSteeringRequired @50;
-    manualSteeringRequiredBlinkersOn @51;
-    vehicleModelInvalid @52;
-    controlsFailed @53;
-    lkasOnlyMode @54;
-    warm @55;
+    vehicleModelInvalid @50;
+    controlsFailed @51;
+    sensorDataInvalid @52;
+    commIssue @53;
+    tooDistracted @54;
+    posenetInvalid @55;
+    soundsUnavailable @56;
+    preLaneChangeLeft @57;
+    preLaneChangeRight @58;
+    laneChange @59;
+    invalidGiraffeToyota @60;
+    internetConnectivityNeeded @61;
+    communityFeatureDisallowed @62;
+    lowMemory @63;
+    stockAeb @64;
+    ldw @65;
+    manualSteeringRequired @66;
+    manualSteeringRequiredBlinkersOn @67;
   }
 }
 
@@ -109,7 +122,11 @@ struct CarState {
   steeringAngle @7 :Float32;   # deg
   steeringRate @15 :Float32;   # deg/s
   steeringTorque @8 :Float32;  # TODO: standardize units
+  steeringTorqueEps @27 :Float32;  # TODO: standardize units
   steeringPressed @9 :Bool;    # if the user is using the steering wheel
+  steeringRateLimited @29 :Bool;    # if the torque is limited by the rate limiter
+  stockAeb @30 :Bool;
+  stockFcw @31 :Bool;
 
   # cruise state
   cruiseState @10 :CruiseState;
@@ -122,12 +139,20 @@ struct CarState {
   leftBlinker @20 :Bool;
   rightBlinker @21 :Bool;
   genericToggle @23 :Bool;
-  readdistancelines @26 :Float32;
-  lkMode @27 :Bool;
+  distanceToggle @33 :Float32;
+  laneDepartureToggle @34 :Bool;
 
   # lock info
   doorOpen @24 :Bool;
   seatbeltUnlatched @25 :Bool;
+  canValid @26 :Bool;
+
+
+  # clutch (manual transmission only)
+  clutchPressed @28 :Bool;
+
+  readdistancelines @32 :Float32;
+  lkMode @35 :Bool;
 
   # which packets this state came from
   canMonoTimes @12: List(UInt64);
@@ -157,8 +182,9 @@ struct CarState {
     sport @5;
     low @6;
     brake @7;
+    eco @8;
+    manumatic @9;
   }
-
 
   # send on change
   struct ButtonEvent {
@@ -175,13 +201,16 @@ struct CarState {
       altButton1 @6;
       altButton2 @7;
       altButton3 @8;
+      setCruise @9;
+      resumeCruise @10;
+      gapAdjustCruise @11;
     }
   }
 }
 
 # ******* radar state @ 20hz *******
 
-struct RadarState {
+struct RadarData @0x888ad6581cf0aacb {
   errors @0 :List(Error);
   points @1 :List(RadarPoint);
 
@@ -189,7 +218,7 @@ struct RadarState {
   canMonoTimes @2 :List(UInt64);
 
   enum Error {
-    commIssue @0;
+    canError @0;
     fault @1;
     wrongConfig @2;
   }
@@ -267,6 +296,7 @@ struct CarControl {
       wrongGear @4;
       seatbeltUnbuckled @5;
       speedTooHigh @6;
+      ldw @7;
     }
 
     enum AudibleAlert {
@@ -298,7 +328,8 @@ struct CarParams {
 
   minEnableSpeed @7 :Float32;
   minSteerSpeed @8 :Float32;
-  safetyModel @9 :Int16;
+  safetyModel @9 :SafetyModel;
+  safetyModelPassive @42 :SafetyModel = silent;
   safetyParam @10 :Int16;
 
   steerMaxBP @11 :List(Float32);
@@ -307,7 +338,6 @@ struct CarParams {
   gasMaxV @14 :List(Float32);
   brakeMaxBP @15 :List(Float32);
   brakeMaxV @16 :List(Float32);
-
 
   # things about the car in the manual
   mass @17 :Float32;             # [kg] running weight
@@ -325,9 +355,11 @@ struct CarParams {
   lateralTuning :union {
     pid @26 :LateralPIDTuning;
     indi @27 :LateralINDITuning;
+    lqr @40 :LateralLQRTuning;
   }
 
   steerLimitAlert @28 :Bool;
+  steerLimitTimer @47 :Float32;  # time before steerLimitAlert is issued
 
   vEgoStopping @29 :Float32; # Speed at which the car goes into stopping state
   directAccelControl @30 :Bool; # Does the car have direct accel control or just gas/brake
@@ -339,6 +371,13 @@ struct CarParams {
 
   steerActuatorDelay @36 :Float32; # Steering wheel actuator delay in seconds
   openpilotLongitudinalControl @37 :Bool; # is openpilot doing the longitudinal control?
+  carVin @38 :Text; # VIN number queried during fingerprinting
+  isPandaBlack @39: Bool;
+  dashcamOnly @41: Bool;
+  transmissionType @43 :TransmissionType;
+  carFw @44 :List(CarFw);
+  radarTimeStep @45: Float32 = 0.05;  # time delta between radar updates, 20Hz is very standard
+  communityFeature @46: Bool;  # true if a community maintained feature is detected
 
   struct LateralPIDTuning {
     kpBP @0 :List(Float32);
@@ -357,7 +396,6 @@ struct CarParams {
     deadzoneV @5 :List(Float32);
   }
 
-
   struct LateralINDITuning {
     outerLoopGain @0 :Float32;
     innerLoopGain @1 :Float32;
@@ -365,10 +403,22 @@ struct CarParams {
     actuatorEffectiveness @3 :Float32;
   }
 
+  struct LateralLQRTuning {
+    scale @0 :Float32;
+    ki @1 :Float32;
+    dcGain @2 :Float32;
 
-  enum SafetyModels {
-    # does NOT match board setting
-    noOutput @0;
+    # State space system
+    a @3 :List(Float32);
+    b @4 :List(Float32);
+    c @5 :List(Float32);
+
+    k @6 :List(Float32);  # LQR gain
+    l @7 :List(Float32);  # Kalman gain
+  }
+
+  enum SafetyModel {
+    silent @0;
     honda @1;
     toyota @2;
     elm327 @3;
@@ -380,10 +430,36 @@ struct CarParams {
     chrysler @9;
     tesla @10;
     subaru @11;
+    gmPassive @12;
+    mazda @13;
+    nissan @14;
+    volkswagen @15;
+    toyotaIpas @16;
+    allOutput @17;
+    gmAscm @18;
+    noOutput @19;  # like silent but with silent CAN TXs
   }
 
   enum SteerControlType {
     torque @0;
     angle @1;
+  }
+
+  enum TransmissionType {
+    unknown @0;
+    automatic @1;
+    manual @2;
+  }
+
+  struct CarFw {
+    ecu @0 :Ecu;
+    fwVersion @1 :Text;
+  }
+
+  enum Ecu {
+    eps @0;
+    esp @1;
+    fwdRadar @2;
+    fwdCamera @3;
   }
 }

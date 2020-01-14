@@ -1,8 +1,8 @@
-import numpy as np
 from cereal import car
+from common.numpy_fast import mean
 from common.kalman.simple_kalman import KF1D
 from selfdrive.config import Conversions as CV
-from selfdrive.can.parser import CANParser
+from opendbc.can.parser import CANParser
 from selfdrive.car.gm.values import DBC, CAR, parse_gear_shifter, \
                                     CruiseButtons, is_eps_status_ok, \
                                     STEER_THRESHOLD, SUPERCRUISE_CARS
@@ -51,6 +51,7 @@ def get_powertrain_can_parser(CP, canbus):
 
   return CANParser(DBC[CP.carFingerprint]['pt'], signals, [], canbus.powertrain)
 
+
 def get_chassis_can_parser(CP, canbus):
   # this function generates lists for signal, messages and initial values
   signals = [
@@ -60,7 +61,7 @@ def get_chassis_can_parser(CP, canbus):
 
   return CANParser(DBC[CP.carFingerprint]['chassis'], signals, [], canbus.chassis)
 
-class CarState(object):
+class CarState():
   def __init__(self, CP, canbus):
     self.CP = CP
     # initialize can parser
@@ -88,8 +89,6 @@ class CarState(object):
     self.v_ego = 0.
 
   def update(self, pt_cp, ch_cp):
-
-    self.can_valid = pt_cp.can_valid
     self.prev_cruise_buttons = self.cruise_buttons
     self.cruise_buttons = pt_cp.vl["ASCMSteeringButton"]['ACCButtons']
     self.prev_lka_button = self.lka_button
@@ -101,7 +100,7 @@ class CarState(object):
     self.v_wheel_fr = pt_cp.vl["EBCMWheelSpdFront"]['FRWheelSpd'] * CV.KPH_TO_MS
     self.v_wheel_rl = pt_cp.vl["EBCMWheelSpdRear"]['RLWheelSpd'] * CV.KPH_TO_MS
     self.v_wheel_rr = pt_cp.vl["EBCMWheelSpdRear"]['RRWheelSpd'] * CV.KPH_TO_MS
-    v_wheel = float(np.mean([self.v_wheel_fl, self.v_wheel_fr, self.v_wheel_rl, self.v_wheel_rr]))
+    v_wheel = mean([self.v_wheel_fl, self.v_wheel_fr, self.v_wheel_rl, self.v_wheel_rr])
 
     if abs(v_wheel - self.v_ego) > 2.0:  # Prevent large accelerations when car starts at non zero speed
       self.v_ego_kf.x = [[v_wheel], [0.0]]
@@ -139,7 +138,6 @@ class CarState(object):
     self.steer_error = False
 
     self.brake_error = False
-    self.can_valid = True
 
     self.prev_left_blinker_on = self.left_blinker_on
     self.prev_right_blinker_on = self.right_blinker_on

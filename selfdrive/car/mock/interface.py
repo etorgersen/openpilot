@@ -1,10 +1,10 @@
-#!/usr/bin/env python
-import zmq
+#!/usr/bin/env python3
 from cereal import car
 from selfdrive.config import Conversions as CV
-from selfdrive.services import service_list
 from selfdrive.swaglog import cloudlog
-import selfdrive.messaging as messaging
+import cereal.messaging as messaging
+from selfdrive.car import gen_empty_fingerprint
+from selfdrive.car.interfaces import CarInterfaceBase
 
 # mocked car interface to work with chffrplus
 TS = 0.01  # 100Hz
@@ -13,17 +13,16 @@ YAW_FR = 0.2 # ~0.8s time constant on yaw rate filter
 LPG = 2 * 3.1415 * YAW_FR * TS / (1 + 2 * 3.1415 * YAW_FR * TS)
 
 
-class CarInterface(object):
-  def __init__(self, CP, sendcan=None):
-
+class CarInterface(CarInterfaceBase):
+  def __init__(self, CP, CarController):
     self.CP = CP
+    self.CC = CarController
 
     cloudlog.debug("Using Mock Car Interface")
-    context = zmq.Context()
 
     # TODO: subscribe to phone sensor
-    self.sensor = messaging.sub_sock(context, service_list['sensorEvents'].port)
-    self.gps = messaging.sub_sock(context, service_list['gpsLocation'].port)
+    self.sensor = messaging.sub_sock('sensorEvents')
+    self.gps = messaging.sub_sock('gpsLocation')
 
     self.speed = 0.
     self.prev_speed = 0.
@@ -35,18 +34,14 @@ class CarInterface(object):
     return accel
 
   @staticmethod
-  def calc_accel_override(a_ego, a_target, v_ego, v_target):
-    return 1.0
-
-  @staticmethod
-  def get_params(candidate, fingerprint):
+  def get_params(candidate, fingerprint=gen_empty_fingerprint(), vin="", has_relay=False):
 
     ret = car.CarParams.new_message()
 
     ret.carName = "mock"
     ret.carFingerprint = candidate
 
-    ret.safetyModel = car.CarParams.SafetyModels.noOutput
+    ret.safetyModel = car.CarParams.SafetyModel.noOutput
     ret.openpilotLongitudinalControl = False
 
     # FIXME: hardcoding honda civic 2016 touring params so they can be used to
@@ -78,8 +73,7 @@ class CarInterface(object):
     return ret
 
   # returns a car.CarState
-  def update(self, c):
-
+  def update(self, c, can_strings):
     # get basic data from phone and gps since CAN isn't connected
     sensors = messaging.recv_sock(self.sensor)
     if sensors is not None:
@@ -120,4 +114,4 @@ class CarInterface(object):
 
   def apply(self, c):
     # in mock no carcontrols
-    return False
+    return []

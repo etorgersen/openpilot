@@ -1,39 +1,75 @@
-import numpy as np
+import os
 from common.numpy_fast import interp
+import math
 
-import selfdrive.messaging as messaging
+import cereal.messaging as messaging
 from selfdrive.swaglog import cloudlog
 from common.realtime import sec_since_boot
 from selfdrive.controls.lib.radar_helpers import _LEAD_ACCEL_TAU
 from selfdrive.controls.lib.longitudinal_mpc import libmpc_py
 from selfdrive.controls.lib.drive_helpers import MPC_COST_LONG
-import math
+from selfdrive.kegman_conf import kegman_conf
 
 # One, two and three bar distances (in s)
-ONE_BAR_DISTANCE = 0.9  # in seconds
-TWO_BAR_DISTANCE = 1.3  # in seconds
-THREE_BAR_DISTANCE = 1.8  # in seconds
-FOUR_BAR_DISTANCE = 2.3   # in seconds
+kegman = kegman_conf()
+if "ONE_BAR_DISTANCE" in kegman.conf:
+    ONE_BAR_DISTANCE = float(kegman.conf['ONE_BAR_DISTANCE'])
+else:
+    ONE_BAR_DISTANCE = 0.9  # in seconds
+if "TWO_BAR_DISTANCE" in kegman.conf:
+    TWO_BAR_DISTANCE = float(kegman.conf['TWO_BAR_DISTANCE'])
+else:
+    TWO_BAR_DISTANCE = 1.3  # in seconds
+if "THREE_BAR_DISTANCE" in kegman.conf:
+    THREE_BAR_DISTANCE = float(kegman.conf['THREE_BAR_DISTANCE'])
+else:
+    THREE_BAR_DISTANCE = 1.8  # in seconds
+if "FOUR_BAR_DISTANCE" in kegman.conf:
+    FOUR_BAR_DISTANCE = float(kegman.conf['FOUR_BAR_DISTANCE'])
+else:
+    FOUR_BAR_DISTANCE = 2.3   # in seconds
+if "STOPPING_DISTANCE" in kegman.conf:
+    STOPPING_DISTANCE = float(kegman.conf['STOPPING_DISTANCE'])
+else:
+    STOPPING_DISTANCE = 2  # distance between you and lead car when you come to stop
 
 TR = TWO_BAR_DISTANCE  # default interval
 
  # Variables that change braking profiles
 CITY_SPEED = 19.44  # braking profile changes when below this speed based on following dynamics below [m/s]
-STOPPING_DISTANCE = 2  # increase distance from lead car when stopped
 
-# Braking profile changes (makes the car brake harder because it wants to be farther from the lead car - increase to brake harder)
+# City braking profile changes (makes the car brake harder because it wants to be farther from the lead car - increase to brake harder)
 ONE_BAR_PROFILE = [ONE_BAR_DISTANCE, 2.5]
-ONE_BAR_PROFILE_BP = [0.0, 3.0]
+ONE_BAR_PROFILE_BP = [0, 2.75]
 
 TWO_BAR_PROFILE = [TWO_BAR_DISTANCE, 2.5]
-TWO_BAR_PROFILE_BP = [0.0, 3.0]
+TWO_BAR_PROFILE_BP = [0, 3.0]
 
 THREE_BAR_PROFILE = [THREE_BAR_DISTANCE, 2.5]
 THREE_BAR_PROFILE_BP = [0.0, 4.0]
 
-class LongitudinalMpc(object):
-  def __init__(self, mpc_id, live_longitudinal_mpc):
-    self.live_longitudinal_mpc = live_longitudinal_mpc
+# Highway braking profiles
+H_ONE_BAR_PROFILE = [ONE_BAR_DISTANCE, ONE_BAR_DISTANCE+0.3]
+H_ONE_BAR_PROFILE_BP = [0.0, 2.5]
+
+H_TWO_BAR_PROFILE = [TWO_BAR_DISTANCE, TWO_BAR_DISTANCE+0.2]
+H_TWO_BAR_PROFILE_BP = [0.0, 3.0]
+
+H_THREE_BAR_PROFILE = [THREE_BAR_DISTANCE, THREE_BAR_DISTANCE+0.1]
+H_THREE_BAR_PROFILE_BP = [0.0, 4.0]
+
+
+LOG_MPC = os.environ.get('LOG_MPC', False)
+
+LOG_MPC = os.environ.get('LOG_MPC', False)
+
+LOG_MPC = os.environ.get('LOG_MPC', False)
+
+LOG_MPC = os.environ.get('LOG_MPC', False)
+
+
+class LongitudinalMpc():
+  def __init__(self, mpc_id):
     self.mpc_id = mpc_id
 
     self.setup_mpc()
@@ -49,8 +85,21 @@ class LongitudinalMpc(object):
     self.last_cloudlog_t = 0.0
     self.v_rel = 10
     self.last_cloudlog_t = 0.0
+    
+    self.bp_counter = 0  
+    
+    kegman = kegman_conf()
+    self.oneBarBP = [float(kegman.conf['1barBP0']), float(kegman.conf['1barBP1'])]
+    self.twoBarBP = [float(kegman.conf['2barBP0']), float(kegman.conf['2barBP1'])]
+    self.threeBarBP = [float(kegman.conf['3barBP0']), float(kegman.conf['3barBP1'])]
+    self.oneBarProfile = [ONE_BAR_DISTANCE, float(kegman.conf['1barMax'])]
+    self.twoBarProfile = [TWO_BAR_DISTANCE, float(kegman.conf['2barMax'])]
+    self.threeBarProfile = [THREE_BAR_DISTANCE, float(kegman.conf['3barMax'])]
+    self.oneBarHwy = [ONE_BAR_DISTANCE, ONE_BAR_DISTANCE+float(kegman.conf['1barHwy'])]
+    self.twoBarHwy = [TWO_BAR_DISTANCE, TWO_BAR_DISTANCE+float(kegman.conf['2barHwy'])]
+    self.threeBarHwy = [THREE_BAR_DISTANCE, THREE_BAR_DISTANCE+float(kegman.conf['3barHwy'])]
 
-  def send_mpc_solution(self, qp_iterations, calculation_time):
+  def send_mpc_solution(self, pm, qp_iterations, calculation_time):
     qp_iterations = max(0, qp_iterations)
     dat = messaging.new_message()
     dat.init('liveLongitudinalMpc')
@@ -64,7 +113,7 @@ class LongitudinalMpc(object):
     dat.liveLongitudinalMpc.qpIterations = qp_iterations
     dat.liveLongitudinalMpc.mpcId = self.mpc_id
     dat.liveLongitudinalMpc.calculationTime = calculation_time
-    self.live_longitudinal_mpc.send(dat.to_bytes())
+    pm.send('liveLongitudinalMpc', dat)
 
   def setup_mpc(self):
     ffi, self.libmpc = libmpc_py.get_libmpc(self.mpc_id)
@@ -81,8 +130,8 @@ class LongitudinalMpc(object):
     self.cur_state[0].v_ego = v
     self.cur_state[0].a_ego = a
 
-  def update(self, CS, lead, v_cruise_setpoint):
-    v_ego = CS.carState.vEgo
+  def update(self, pm, CS, lead, v_cruise_setpoint):
+    v_ego = CS.vEgo
 
     # Setup current mpc state
     self.cur_state[0].x_ego = 0.0
@@ -125,55 +174,72 @@ class LongitudinalMpc(object):
     else:
       self.street_speed = 0
 
-
+      
+    # Live Tuning of breakpoints for braking profile change
+    self.bp_counter += 1
+    if self.bp_counter % 500 == 0:
+      kegman = kegman_conf()
+      self.oneBarBP = [float(kegman.conf['1barBP0']), float(kegman.conf['1barBP1'])]
+      self.twoBarBP = [float(kegman.conf['2barBP0']), float(kegman.conf['2barBP1'])]
+      self.threeBarBP = [float(kegman.conf['3barBP0']), float(kegman.conf['3barBP1'])]
+      self.oneBarProfile = [ONE_BAR_DISTANCE, float(kegman.conf['1barMax'])]
+      self.twoBarProfile = [TWO_BAR_DISTANCE, float(kegman.conf['2barMax'])]
+      self.threeBarProfile = [THREE_BAR_DISTANCE, float(kegman.conf['3barMax'])]
+      self.oneBarHwy = [ONE_BAR_DISTANCE, ONE_BAR_DISTANCE+float(kegman.conf['1barHwy'])]
+      self.twoBarHwy = [TWO_BAR_DISTANCE, TWO_BAR_DISTANCE+float(kegman.conf['2barHwy'])]
+      self.threeBarHwy = [THREE_BAR_DISTANCE, THREE_BAR_DISTANCE+float(kegman.conf['3barHwy'])]
+      self.bp_counter = 0  
+      
+      
     # Calculate mpc
     # Adjust distance from lead car when distance button pressed 
-    if CS.carState.readdistancelines == 1:
+    if CS.readdistancelines == 1:
       #if self.street_speed and (self.lead_car_gap_shrinking or self.tailgating):
       if self.street_speed:
-        TR = interp(-self.v_rel, ONE_BAR_PROFILE_BP, ONE_BAR_PROFILE)  
+        TR = interp(-self.v_rel, self.oneBarBP, self.oneBarProfile)  
       else:
-        TR = ONE_BAR_DISTANCE 
-      if CS.carState.readdistancelines != self.lastTR:
+        TR = interp(-self.v_rel, H_ONE_BAR_PROFILE_BP, self.oneBarHwy) 
+      if CS.readdistancelines != self.lastTR:
         self.libmpc.init(MPC_COST_LONG.TTC, 1.0, MPC_COST_LONG.ACCELERATION, MPC_COST_LONG.JERK)
-        self.lastTR = CS.carState.readdistancelines  
+        self.lastTR = CS.readdistancelines  
 
-    elif CS.carState.readdistancelines == 2:
+    elif CS.readdistancelines == 2:
       #if self.street_speed and (self.lead_car_gap_shrinking or self.tailgating):
       if self.street_speed:
-        TR = interp(-self.v_rel, TWO_BAR_PROFILE_BP, TWO_BAR_PROFILE)
+        TR = interp(-self.v_rel, self.twoBarBP, self.twoBarProfile)
       else:
-        TR = TWO_BAR_DISTANCE 
-      if CS.carState.readdistancelines != self.lastTR:
+        TR = interp(-self.v_rel, H_TWO_BAR_PROFILE_BP, self.twoBarHwy)
+      if CS.readdistancelines != self.lastTR:
         self.libmpc.init(MPC_COST_LONG.TTC, MPC_COST_LONG.DISTANCE, MPC_COST_LONG.ACCELERATION, MPC_COST_LONG.JERK)
-        self.lastTR = CS.carState.readdistancelines  
+        self.lastTR = CS.readdistancelines  
 
-    elif CS.carState.readdistancelines == 3:
+    elif CS.readdistancelines == 3:
       if self.street_speed:
       #if self.street_speed and (self.lead_car_gap_shrinking or self.tailgating):
-        TR = interp(-self.v_rel, THREE_BAR_PROFILE_BP, THREE_BAR_PROFILE)
+        TR = interp(-self.v_rel, self.threeBarBP, self.threeBarProfile)
       else:
-        TR = THREE_BAR_DISTANCE 
-      if CS.carState.readdistancelines != self.lastTR:
+        TR = interp(-self.v_rel, H_THREE_BAR_PROFILE_BP, self.threeBarHwy)
+      if CS.readdistancelines != self.lastTR:
         self.libmpc.init(MPC_COST_LONG.TTC, MPC_COST_LONG.DISTANCE, MPC_COST_LONG.ACCELERATION, MPC_COST_LONG.JERK)
-        self.lastTR = CS.carState.readdistancelines   
+        self.lastTR = CS.readdistancelines   
 
-    elif CS.carState.readdistancelines == 4:
+    elif CS.readdistancelines == 4:
       TR = FOUR_BAR_DISTANCE
-      if CS.carState.readdistancelines != self.lastTR:
+      if CS.readdistancelines != self.lastTR:
         self.libmpc.init(MPC_COST_LONG.TTC, MPC_COST_LONG.DISTANCE, MPC_COST_LONG.ACCELERATION, MPC_COST_LONG.JERK) 
-        self.lastTR = CS.carState.readdistancelines      
+        self.lastTR = CS.readdistancelines      
 
     else:
      TR = TWO_BAR_DISTANCE # if readdistancelines != 1,2,3,4
      self.libmpc.init(MPC_COST_LONG.TTC, MPC_COST_LONG.DISTANCE, MPC_COST_LONG.ACCELERATION, MPC_COST_LONG.JERK)
 
     
-    
     t = sec_since_boot()
     n_its = self.libmpc.run_mpc(self.cur_state, self.mpc_solution, self.a_lead_tau, a_lead, TR)
     duration = int((sec_since_boot() - t) * 1e9)
-    self.send_mpc_solution(n_its, duration)
+
+    if LOG_MPC:
+      self.send_mpc_solution(pm, n_its, duration)
 
     # Get solution. MPC timestep is 0.2 s, so interpolation to 0.05 s is needed
     self.v_mpc = self.mpc_solution[0].v_ego[1]
@@ -181,10 +247,9 @@ class LongitudinalMpc(object):
     self.v_mpc_future = self.mpc_solution[0].v_ego[10]
 
     # Reset if NaN or goes through lead car
-    dls = np.array(list(self.mpc_solution[0].x_l)) - np.array(list(self.mpc_solution[0].x_ego))
-    crashing = min(dls) < -50.0
-    nans = np.any(np.isnan(list(self.mpc_solution[0].v_ego)))
-    backwards = min(list(self.mpc_solution[0].v_ego)) < -0.01
+    crashing = any(lead - ego < -50 for (lead, ego) in zip(self.mpc_solution[0].x_l, self.mpc_solution[0].x_ego))
+    nans = any(math.isnan(x) for x in self.mpc_solution[0].v_ego)
+    backwards = min(self.mpc_solution[0].v_ego) < -0.01
 
     if ((backwards or crashing) and self.prev_lead_status) or nans:
       if t > self.last_cloudlog_t + 5.0:
@@ -197,5 +262,5 @@ class LongitudinalMpc(object):
       self.cur_state[0].v_ego = v_ego
       self.cur_state[0].a_ego = 0.0
       self.v_mpc = v_ego
-      self.a_mpc = CS.carState.aEgo
+      self.a_mpc = CS.aEgo
       self.prev_lead_status = False

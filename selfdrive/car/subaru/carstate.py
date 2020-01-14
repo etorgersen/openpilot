@@ -1,7 +1,7 @@
 import copy
 from common.kalman.simple_kalman import KF1D
 from selfdrive.config import Conversions as CV
-from selfdrive.can.parser import CANParser
+from opendbc.can.parser import CANParser
 from selfdrive.car.subaru.values import DBC, STEER_THRESHOLD
 
 def get_powertrain_can_parser(CP):
@@ -38,6 +38,7 @@ def get_powertrain_can_parser(CP):
   ]
 
   return CANParser(DBC[CP.carFingerprint]['pt'], signals, checks, 0)
+
 
 def get_camera_can_parser(CP):
   signals = [
@@ -80,7 +81,8 @@ def get_camera_can_parser(CP):
 
   return CANParser(DBC[CP.carFingerprint]['pt'], signals, checks, 2)
 
-class CarState(object):
+
+class CarState():
   def __init__(self, CP):
     # initialize can parser
     self.CP = CP
@@ -104,9 +106,6 @@ class CarState(object):
 
   def update(self, cp, cp_cam):
 
-    self.can_valid = cp.can_valid
-    self.cam_can_valid = cp_cam.can_valid
-
     self.pedal_gas = cp.vl["Throttle"]['Throttle_Pedal']
     self.brake_pressure = cp.vl["Brake_Pedal"]['Brake_Pedal']
     self.user_gas_pressed = self.pedal_gas > 0
@@ -124,7 +123,7 @@ class CarState(object):
       self.v_cruise_pcm *= CV.MPH_TO_KPH
 
     v_wheel = (self.v_wheel_fl + self.v_wheel_fr + self.v_wheel_rl + self.v_wheel_rr) / 4.
-    # Kalman filter, even though Hyundai raw wheel speed is heaviliy filtered by default
+    # Kalman filter, even though Subaru raw wheel speed is heaviliy filtered by default
     if abs(v_wheel - self.v_ego) > 2.0:  # Prevent large accelerations when car starts at non zero speed
       self.v_ego_kf.x = [[v_wheel], [0.0]]
 

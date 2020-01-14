@@ -1,14 +1,14 @@
 from cereal import car
+from common.realtime import DT_CTRL
 from common.numpy_fast import interp
-from common.realtime import sec_since_boot
 from selfdrive.config import Conversions as CV
-from selfdrive.boardd.boardd import can_list_to_can_capnp
 from selfdrive.car import apply_std_steer_torque_limits
 from selfdrive.car.gm import gmcan
 from selfdrive.car.gm.values import DBC, AccState, SUPERCRUISE_CARS
-from selfdrive.can.packer import CANPacker
+from opendbc.can.packer import CANPacker
 
 VisualAlert = car.CarControl.HUDControl.VisualAlert
+
 
 class CarControllerParams():
   def __init__(self, car_fingerprint):
@@ -48,7 +48,7 @@ class CarControllerParams():
 
 def actuator_hystereses(final_pedal, pedal_steady):
   # hyst params... TODO: move these to VehicleParams
-  pedal_hyst_gap = 0.01    # don't change pedal command for small oscilalitons within this value
+  pedal_hyst_gap = 0.01    # don't change pedal command for small oscillations within this value
 
   # for small pedal oscillations within pedal_hyst_gap, don't change the pedal command
   if final_pedal == 0.:
@@ -68,16 +68,15 @@ def process_hud_alert(hud_alert):
     steer = 1
   return steer
 
-class CarController(object):
-  def __init__(self, canbus, car_fingerprint, allow_controls):
+class CarController():
+  def __init__(self, canbus, car_fingerprint):
     self.pedal_steady = 0.
-    self.start_time = sec_since_boot()
-    self.chime = 0
+    self.start_time = 0.
     self.steer_idx = 0
     self.apply_steer_last = 0
     self.car_fingerprint = car_fingerprint
-    self.allow_controls = allow_controls
     self.lka_icon_status_last = (False, False)
+    self.steer_rate_limited = False
     self.fcw_count = 0
 
     # Setup detection helper. Routes commands to
@@ -88,13 +87,8 @@ class CarController(object):
     self.packer_pt = CANPacker(DBC[car_fingerprint]['pt'])
     self.packer_ch = CANPacker(DBC[car_fingerprint]['chassis'])
 
-  def update(self, sendcan, enabled, CS, frame, actuators, \
-             hud_v_cruise, hud_show_lanes, hud_show_car, chime, chime_cnt, hud_alert):
-    """ Controls thread """
-
-    # Sanity check.
-    if not self.allow_controls:
-      return
+  def update(self, enabled, CS, frame, actuators, \
+             hud_v_cruise, hud_show_lanes, hud_show_car, hud_alert):
 
     P = self.params
     # Send CAN commands.
@@ -104,13 +98,17 @@ class CarController(object):
     alert_out = process_hud_alert(hud_alert)
     steer = alert_out
 
+    alert_out = process_hud_alert(hud_alert)
+    steer = alert_out
+
     ### STEER ###
 
     if (frame % P.STEER_STEP) == 0:
-      lkas_enabled = enabled and not CS.steer_not_allowed and CS.lkMode and CS.v_ego > P.MIN_STEER_SPEED and not CS.left_blinker_on and not CS.right_blinker_on
+      lkas_enabled = enabled and not CS.steer_not_allowed and CS.lkMode and CS.v_ego > P.MIN_STEER_SPEED #and not CS.left_blinker_on and not CS.right_blinker_on
       if lkas_enabled:
-        apply_steer = actuators.steer * P.STEER_MAX
-        apply_steer = apply_std_steer_torque_limits(apply_steer, self.apply_steer_last, CS.steer_torque_driver, P)
+        new_steer = actuators.steer * P.STEER_MAX
+        apply_steer = apply_std_steer_torque_limits(new_steer, self.apply_steer_last, CS.steer_torque_driver, P)
+        self.steer_rate_limited = new_steer != apply_steer
       else:
         apply_steer = 0
 
@@ -173,7 +171,7 @@ class CarController(object):
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)
       time_and_headlights_step = 10
-      tt = sec_since_boot()
+      tt = frame * DT_CTRL
 
       if frame % time_and_headlights_step == 0:
         idx = (frame // time_and_headlights_step) % 4
@@ -201,22 +199,4 @@ class CarController(object):
         can_sends.append(gmcan.create_lka_icon_command(canbus.sw_gmlan, lka_active, lka_critical, steer))
         self.lka_icon_status_last = lka_icon_status
 
-    # Send chimes
-    if self.chime != chime:
-      duration = 0x1e
-
-      # There is no 'repeat forever' chime command
-      # TODO: Manage periodic re-issuing of chime command
-      # and chime cancellation
-      if chime_cnt == -1:
-        chime_cnt = 10
-        self.fcw_count = 100 # Continuous chime = critical alert so trigger FCWAlert
-
-      if chime != 0:
-        can_sends.append(gmcan.create_chime_command(canbus.sw_gmlan, chime, duration, chime_cnt))
-
-      # If canceling a repeated chime, cancel command must be
-      # issued for the same chime type and duration
-      self.chime = chime
-
-    sendcan.send(can_list_to_can_capnp(can_sends, msgtype='sendcan'))
+    return can_sends

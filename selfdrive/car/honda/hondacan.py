@@ -2,38 +2,47 @@ import struct
 import common.numpy_fast as np #Clarity
 from selfdrive.config import Conversions as CV
 from selfdrive.car.honda.values import CAR, HONDA_BOSCH, VEHICLE_STATE_MSG #Clarity
+from common.params import Params
 
+#Clarity
 # *** Honda specific ***
 def can_cksum(mm):
   s = 0
   for c in mm:
-    c = ord(c)
     s += (c>>4)
     s += c & 0xF
   s = 8-s
   s %= 0x10
   return s
 
-
+#Clarity
 def fix(msg, addr):
-  msg2 = msg[0:-1] + chr(ord(msg[-1]) | can_cksum(struct.pack("I", addr)+msg))
+  msg2 = msg[0:-1] + (msg[-1] | can_cksum(struct.pack("I", addr)+msg)).to_bytes(1, 'little')
   return msg2
+
+def get_pt_bus(car_fingerprint, has_relay):
+  return 1 if car_fingerprint in HONDA_BOSCH and has_relay else 0
+
+
+def get_lkas_cmd_bus(car_fingerprint, has_relay):
+  return 2 if car_fingerprint in HONDA_BOSCH and not has_relay else 0
 
 #Clarity
 def make_can_msg(addr, dat, idx, alt):
   if idx is not None:
-    dat += chr(idx << 4)
+    dat += (int(idx) << 4).to_bytes(1,'little')
     dat = fix(dat, addr)
   return [addr, 0, dat, alt]
+
  #Clarity
-def create_brake_command(packer, apply_brake, pcm_override, pcm_cancel_cmd, chime, fcw, car_fingerprint, idx):
+def create_brake_command(packer, apply_brake, pcm_override, pcm_cancel_cmd, fcw, idx, car_fingerprint, has_relay, stock_brake):
   # TODO: do we loose pressure if we keep pump off for long?
-  commands = []  #Clarity
-  pump_on = apply_brake > 0  #Clarity
+  commands = [] #Clarity
+  pump_on = apply_brake > 0 #Clarity
   brakelights = apply_brake > 0
   brake_rq = apply_brake > 0
   pcm_fault_cmd = False
-  bus = 0  #Clarity
+
   #Clarity
   if car_fingerprint == CAR.CLARITY:
     bus = 2
@@ -50,62 +59,69 @@ def create_brake_command(packer, apply_brake, pcm_override, pcm_cancel_cmd, chim
     "CRUISE_FAULT_CMD": pcm_fault_cmd,
     "CRUISE_CANCEL_CMD": pcm_cancel_cmd,
     "COMPUTER_BRAKE_REQUEST": brake_rq,
-    "SET_ME_0X80": 0x80,
+    "SET_ME_1": 1,
     "BRAKE_LIGHTS": brakelights,
-    "CHIME": chime,
-    # TODO: Why are there two bits for fcw? According to dbc file the first bit should also work
-    "FCW": fcw << 1,
+    "CHIME": 0,  # chime issued when disabling FCM - Clarity
+    "FCW": fcw << 1,  # TODO: Why are there two bits for fcw?
+    "AEB_REQ_1": 0,
+    "AEB_REQ_2": 0,
+    "AEB_STATUS": 0,
   }
+
   #Clarity
-  #return packer.make_can_msg("BRAKE_COMMAND", 0, values, idx)
+  #bus = get_pt_bus(car_fingerprint, has_relay)
+  #return packer.make_can_msg("BRAKE_COMMAND", bus, values, idx)
   commands.append(packer.make_can_msg("BRAKE_COMMAND", bus, values, idx))
   return commands
 
-#Clarity
-def create_gas_command(packer, gas_amount, idx):
-  enable = gas_amount > 0.001
-  values = {"ENABLE": enable}
-  if enable:
-    values["GAS_COMMAND"] = gas_amount * 255.
-    values["GAS_COMMAND2"] = gas_amount * 255.
-  return packer.make_can_msg("GAS_COMMAND", 0, values, idx)
 
-
-def create_steering_control(packer, apply_steer, lkas_active, car_fingerprint, idx):
+def create_steering_control(packer, apply_steer, lkas_active, car_fingerprint, idx, has_relay):
   values = {
     "STEER_TORQUE": apply_steer if lkas_active else 0,
     "STEER_TORQUE_REQUEST": lkas_active,
   }
   #Clarity
-  # Set bus 2 for bosch or clarity.
-  bus = 2 if car_fingerprint in HONDA_BOSCH or car_fingerprint == CAR.CLARITY else 0
+  #bus = get_lkas_cmd_bus(car_fingerprint, has_relay)
+  bus = 2
   return packer.make_can_msg("STEERING_CONTROL", bus, values, idx)
 
 
-def create_ui_commands(packer, pcm_speed, hud, car_fingerprint, idx):
+def create_ui_commands(packer, pcm_speed, hud, car_fingerprint, is_metric, idx, has_relay, stock_hud):
   commands = []
-  bus = 0
-  #Clarity
-  if car_fingerprint == CAR.CLARITY:
-    bus = 2
+  #bus_pt = get_pt_bus(car_fingerprint, has_relay)
+  #bus_lkas = get_lkas_cmd_bus(car_fingerprint, has_relay)
 
-  # Bosch sends commands to bus 2.
-  if car_fingerprint in HONDA_BOSCH:
-    bus = 2
-  else:
+  if car_fingerprint not in HONDA_BOSCH:
+    is_eon_metric = Params().get("IsMetric", encoding='utf8') == "1"
+    if is_eon_metric:
+      speed_units = 2
+    else:
+      speed_units = 3
+      
+  #Clarity
+  #bus_pt = get_pt_bus(car_fingerprint, has_relay)
+  bus_pt = 2
+  #bus_lkas = get_lkas_cmd_bus(car_fingerprint, has_relay)
+  bus_lkas = 2
+
+  if car_fingerprint not in HONDA_BOSCH:
     acc_hud_values = {
       'PCM_SPEED': pcm_speed * CV.MS_TO_KPH,
       'PCM_GAS': hud.pcm_accel,
       'CRUISE_SPEED': hud.v_cruise,
       'ENABLE_MINI_CAR': hud.mini_car,
       'HUD_LEAD': hud.car,
-      'SET_ME_X03': hud.dist_lines,
-      'SET_ME_X03_2': hud.speed_units,
-      'SET_ME_X01': 0x01,
       'HUD_DISTANCE_3': 1,
+      'HUD_DISTANCE': hud.dist_lines,    # max distance setting on display
+      'IMPERIAL_UNIT': speed_units,
+      'SET_ME_X01_2': 1,
+      'SET_ME_X01': 1,
+      "FCM_OFF": 0, #CLarity
+      "FCM_OFF_2": 0, #Clarity
+      "FCM_PROBLEM": 0, #Clarity
+      "ICONS": 0, #Clarity
     }
-    #Clarity sends longitudinal control and UI messages to bus 0 and 2.
-    commands.append(packer.make_can_msg("ACC_HUD", bus, acc_hud_values, idx))
+    commands.append(packer.make_can_msg("ACC_HUD", bus_pt, acc_hud_values, idx))
 
   lkas_hud_values = {
     'SET_ME_X41': 0x41,
@@ -113,22 +129,18 @@ def create_ui_commands(packer, pcm_speed, hud, car_fingerprint, idx):
     'STEERING_REQUIRED': hud.steer_required,
     'SOLID_LANES': hud.lanes,
     'DASHED_LANES': hud.dashed_lanes,
-    'BEEP': hud.beep,
+    'BEEP': 0,
   }
-  #Clarity sends longitudinal control and UI messages to bus 0 and 2.
-  if car_fingerprint == CAR.CLARITY:
-    commands.append(packer.make_can_msg('LKAS_HUD', 2, lkas_hud_values, idx))
-    commands.append(packer.make_can_msg('HIGHBEAM_CONTROL', 2, {'HIGHBEAMS_ON': False}, idx))
+  commands.append(packer.make_can_msg('LKAS_HUD', bus_lkas, lkas_hud_values, idx))
 
   if car_fingerprint in (CAR.CIVIC, CAR.ODYSSEY):
-
     radar_hud_values = {
       'ACC_ALERTS': hud.acc_alert,
       'LEAD_SPEED': 0x1fe,  # What are these magic values
       'LEAD_STATE': 0x7,
       'LEAD_DISTANCE': 0x1e,
     }
-    commands.append(packer.make_can_msg('RADAR_HUD', 0, radar_hud_values, idx))
+    commands.append(packer.make_can_msg('RADAR_HUD', bus_pt, radar_hud_values, idx))
   return commands
 
 #Clarity
@@ -138,9 +150,9 @@ def create_radar_commands(v_ego, car_fingerprint, new_radar_config, idx):
   v_ego_kph = np.clip(int(round(v_ego * CV.MS_TO_KPH)), 0, 255)
   speed = struct.pack('!B', v_ego_kph)
 
-  msg_0x300 = ("\xf9" + speed + "\x8a\xd0" +
-               ("\x20" if idx == 0 or idx == 3 else "\x00") +
-               "\x00\x00")
+  msg_0x300 = (b'\xf9' + speed + b'\x8a\xd0' +
+               (b'\x20' if idx == 0 or idx == 3 else b'\x00') +
+               b'\x00\x00')
   msg_0x301 = VEHICLE_STATE_MSG[car_fingerprint]
 
   idx_0x300 = idx
@@ -152,9 +164,12 @@ def create_radar_commands(v_ego, car_fingerprint, new_radar_config, idx):
   commands.append(make_can_msg(0x301, msg_0x301, idx, 1))
   return commands
 
-def spam_buttons_command(packer, button_val, idx):
+def spam_buttons_command(packer, button_val, idx, car_fingerprint, has_relay):
   values = {
     'CRUISE_BUTTONS': button_val,
     'CRUISE_SETTING': 0,
   }
-  return packer.make_can_msg("SCM_BUTTONS", 0, values, idx)
+  #Clarity
+  #bus = get_pt_bus(car_fingerprint, has_relay)
+  bus = 0
+  return packer.make_can_msg("SCM_BUTTONS", bus, values, idx)
