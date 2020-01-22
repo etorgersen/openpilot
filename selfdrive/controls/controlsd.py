@@ -2,6 +2,7 @@
 import os
 import gc
 import capnp
+import common.glob
 from cereal import car, log
 from common.numpy_fast import clip
 from common.realtime import sec_since_boot, set_realtime_priority, Ratekeeper, DT_CTRL
@@ -33,6 +34,7 @@ LANE_DEPARTURE_THRESHOLD = 0.1
 ThermalStatus = log.ThermalData.ThermalStatus
 State = log.ControlsState.OpenpilotState
 HwType = log.HealthData.HwType
+common.glob.init()
 
 LaneChangeState = log.PathPlan.LaneChangeState
 LaneChangeDirection = log.PathPlan.LaneChangeDirection
@@ -130,9 +132,11 @@ def data_sample(CI, CC, sm, can_sock, driver_status, state, mismatch_counter, pa
   # Therefore we allow a mismatch for two samples, then we trigger the disengagement.
   if not enabled:
     mismatch_counter = 0
+    if common.glob.lkOnlyMode:
+      common.glob.lkOnlyMode = False
 
   controls_allowed = sm['health'].controlsAllowed
-  if not controls_allowed and enabled:
+  if not controls_allowed and enabled and not common.glob.lkOnlyMode:
     mismatch_counter += 1
   if mismatch_counter >= 200:
     events.append(create_event('controlsMismatch', [ET.IMMEDIATE_DISABLE]))
@@ -327,7 +331,10 @@ def data_send(sm, pm, CS, CI, CP, VM, state, events, actuators, v_cruise_kph, rk
 
   # Some override values for Honda
   brake_discount = (1.0 - clip(actuators.brake * 3., 0.0, 1.0))  # brake discount removes a sharp nonlinearity
-  CC.cruiseControl.speedOverride = float(max(0.0, (LoC.v_pid + CS.cruiseState.speedOffset) * brake_discount) if CP.enableCruise else 0.0)
+  if common.glob.lkOnlyMode:
+    CC.cruiseControl.speedOverride = float(0.0)
+  else:
+    CC.cruiseControl.speedOverride = float(max(0.0, (LoC.v_pid + CS.cruiseState.speedOffset) * brake_discount) if CP.enableCruise else 0.0)
   CC.cruiseControl.accelOverride = CI.calc_accel_override(CS.aEgo, sm['plan'].aTarget, CS.vEgo, sm['plan'].vTarget)
 
   CC.hudControl.setSpeed = float(v_cruise_kph * CV.KPH_TO_MS)
@@ -582,7 +589,10 @@ def controlsd_thread(sm=None, pm=None, can_sock=None):
 
     # Only allow engagement with brake pressed when stopped behind another stopped car
     if CS.brakePressed and sm['plan'].vTargetFuture >= STARTING_TARGET_SPEED and not CP.radarOffCan and CS.vEgo < 0.3:
-      events.append(create_event('noTarget', [ET.NO_ENTRY, ET.IMMEDIATE_DISABLE]))
+      if CS.lkMode and not common.glob.lkOnlyMode:
+        common.glob.lkOnlyMode = True
+      elif not CS.lkMode:
+        events.append(create_event('noTarget', [ET.NO_ENTRY, ET.IMMEDIATE_DISABLE]))
 
     if not read_only:
       # update control state
