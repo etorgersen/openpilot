@@ -1,4 +1,4 @@
-import common.glob
+import common.lkglob
 from cereal import car #Clarity
 from collections import namedtuple
 from common.realtime import DT_CTRL
@@ -136,7 +136,7 @@ class CarController():
       STEER_MAX = 0x1000
 
     # steer torque is converted back to CAN reference (positive when steering right)
-    if common.glob.lkOnlyMode:
+    if common.lkglob.lkOnlyMode:
       apply_gas = 0
       apply_brake = 0
     else:

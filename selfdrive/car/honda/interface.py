@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-import common.glob
+import common.lkglob
 from cereal import car
 from common.numpy_fast import clip, interp
 from common.realtime import DT_CTRL
@@ -527,7 +527,7 @@ class CarInterface(CarInterfaceBase):
     # events
     events = []
 
-    if common.glob.lkOnlyMode:
+    if common.lkglob.lkOnlyMode:
       events.append(create_event('lkasOnlyMode', [ET.WARNING]))
 
     if not self.CS.lkMode:
@@ -564,18 +564,18 @@ class CarInterface(CarInterfaceBase):
     # if lkMode is true, switch to lkOnlyMode.  If lkMode is false, disable
     if (ret.gasPressed and not self.gas_pressed_prev) or \
        (ret.brakePressed and (not self.brake_pressed_prev or ret.vEgo > 0.001)):
-      if not common.glob.lkOnlyMode and self.CS.lkMode and ret.cruiseState.enabled:
-        common.glob.lkOnlyMode = True
+      if not common.lkglob.lkOnlyMode and self.CS.lkMode and ret.cruiseState.enabled:
+        common.lkglob.lkOnlyMode = True
       elif not self.CS.lkMode:
         events.append(create_event('pedalPressed', [ET.NO_ENTRY, ET.USER_DISABLE]))
-        common.glob.lkOnlyMode = False
+        common.lkglob.lkOnlyMode = False
 
     if ret.gasPressed:
       events.append(create_event('pedalPressed', [ET.PRE_ENABLE]))
 
     # it can happen that car cruise disables while comma system is enabled: need to
     # keep braking if needed or if the speed is very low
-    if self.CP.enableCruise and not ret.cruiseState.enabled and common.glob.lkOnlyMode and (c.actuators.brake <= 0. or not self.CP.openpilotLongitudinalControl):
+    if self.CP.enableCruise and not ret.cruiseState.enabled and common.lkglob.lkOnlyMode and (c.actuators.brake <= 0. or not self.CP.openpilotLongitudinalControl):
       # non loud alert if cruise disbales below 25mph as expected (+ a little margin)
       if ret.vEgo < self.CP.minEnableSpeed + 2.:
         events.append(create_event('speedTooLow', [ET.IMMEDIATE_DISABLE]))
@@ -597,7 +597,7 @@ class CarInterface(CarInterfaceBase):
       # do disable on button down
       if b.type == "cancel" and b.pressed:
         events.append(create_event('buttonCancel', [ET.USER_DISABLE]))
-        common.glob.lkOnlyMode = False
+        common.lkglob.lkOnlyMode = False
 
     if self.CP.enableCruise:
       # KEEP THIS EVENT LAST! send enable event if button is pressed and there are
@@ -626,7 +626,7 @@ class CarInterface(CarInterfaceBase):
   # to be called @ 100hz
   def apply(self, c):
     if c.hudControl.speedVisible:
-      if common.glob.lkOnlyMode:
+      if common.lkglob.lkOnlyMode:
         hud_v_cruise = 0
       else:
         hud_v_cruise = c.hudControl.setSpeed * CV.MS_TO_KPH
